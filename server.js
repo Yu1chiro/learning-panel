@@ -7,22 +7,17 @@ const { Pool } = require("pg");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Koneksi Neon DB
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Inisialisasi Tabel
-// Inisialisasi Tabel
 (async () => {
-  let client; // Definisikan di luar try
+  let client; 
   try {
     client = await pool.connect();
     
-    // --- BAGIAN 1: CREATE TABLES (Aman di dalam Transaksi) ---
     await client.query("BEGIN");
 
-    // 1. Tabel Chapters
     await client.query(`
       CREATE TABLE IF NOT EXISTS chapters (
         id SERIAL PRIMARY KEY,
@@ -31,7 +26,6 @@ const pool = new Pool({
       )
     `);
 
-    // 2. Tabel Vocabularies
     await client.query(`
       CREATE TABLE IF NOT EXISTS vocabularies (
         id SERIAL PRIMARY KEY,
@@ -42,7 +36,6 @@ const pool = new Pool({
       )
     `);
 
-    // 3. Tabel Grammar Patterns
     await client.query(`
       CREATE TABLE IF NOT EXISTS grammar_patterns (
         id SERIAL PRIMARY KEY,
@@ -55,7 +48,6 @@ const pool = new Pool({
       )
     `);
 
-    // 4. Tabel Quizzes
     await client.query(`
       CREATE TABLE IF NOT EXISTS quizzes (
         id SERIAL PRIMARY KEY,
@@ -65,11 +57,11 @@ const pool = new Pool({
         option_b TEXT,
         option_c TEXT,
         option_d TEXT,
-        correct_answer VARCHAR(1)
+        correct_answer VARCHAR(1),
+        answer_summary TEXT
       )
     `);
 
-    // 5. Tabel Reading Passages
     await client.query(`
       CREATE TABLE IF NOT EXISTS reading_passages (
         id SERIAL PRIMARY KEY,
@@ -78,7 +70,6 @@ const pool = new Pool({
       )
     `);
 
-    // 6. Tabel Reading Questions
     await client.query(`
       CREATE TABLE IF NOT EXISTS reading_questions (
         id SERIAL PRIMARY KEY,
@@ -92,7 +83,6 @@ const pool = new Pool({
       )
     `);
 
-    // 7. Tabel Listening Exercises
     await client.query(`
       CREATE TABLE IF NOT EXISTS listening_exercises (
         id SERIAL PRIMARY KEY,
@@ -108,12 +98,8 @@ const pool = new Pool({
     await client.query("COMMIT");
     console.log("Semua tabel (CREATE IF NOT EXISTS) berhasil dieksekusi.");
 
-    // --- BAGIAN 2: ALTER TABLES (Dijalankan di luar transaksi untuk debugging) ---
-    // Kita tidak menggunakan BEGIN/COMMIT di sini agar error-nya spesifik
-    
     console.log("Memulai validasi kolom (ALTER)...");
 
-    // Listening
     await client.query(`ALTER TABLE listening_exercises ADD COLUMN IF NOT EXISTS description TEXT;`);
     await client.query(`ALTER TABLE listening_exercises ADD COLUMN IF NOT EXISTS image_url TEXT;`);
     await client.query(`ALTER TABLE listening_exercises ADD COLUMN IF NOT EXISTS script TEXT;`);
@@ -123,7 +109,6 @@ const pool = new Pool({
     await client.query(`ALTER TABLE listening_exercises DROP COLUMN IF EXISTS audio_url_2;`);
     console.log("Validasi kolom 'listening_exercises' selesai.");
 
-    // Vocabularies
     try {
       await client.query(`ALTER TABLE vocabularies RENAME COLUMN content TO kosakata;`);
     } catch (renameErr) {
@@ -135,19 +120,19 @@ const pool = new Pool({
     await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS image_url TEXT;`);
     console.log("Validasi kolom 'vocabularies' selesai.");
 
-    // Grammar Patterns
     await client.query(`ALTER TABLE grammar_patterns DROP COLUMN IF EXISTS image_url;`); 
     await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS image_urls TEXT[] DEFAULT ARRAY[]::TEXT[];`); 
     await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS sort_order INTEGER;`);
     console.log("Validasi kolom 'grammar_patterns' selesai.");
 
+    await client.query(`ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS answer_summary TEXT;`);
+    console.log("Validasi kolom 'quizzes' (answer_summary) selesai.");
+
     console.log("Semua validasi kolom (ALTER) berhasil.");
     
   } catch (err) {
-    // [PENTING] Error yang asli SEKARANG akan ditangkap di sini
-    console.error("Error saat inisialisasi tabel:", err); // <-- PERHATIKAN INI
+    console.error("Error saat inisialisasi tabel:", err); 
     if (client) {
-        // Jika error terjadi di dalam transaksi (Bagian 1), rollback
         try { await client.query("ROLLBACK"); } catch (rbErr) { console.error("Error saat rollback:", rbErr); }
     }
   } finally {
@@ -157,15 +142,11 @@ const pool = new Pool({
     }
   }
 })();
-// Middleware
-// Middleware
-// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "dev")));
 
-// === Middleware Autentikasi ===
 function authPageMiddleware(req, res, next) {
   if (req.cookies.auth === "true") {
     next();
@@ -181,41 +162,37 @@ function authApiMiddleware(req, res, next) {
   }
 }
 
-// === Routing Halaman ===
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "dev", "index.html"));
 });
 app.get("/quiz", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "quiz.html"));
+  res.sendFile(path.join(__dirname, "dev", "quiz.html"));
 });
 app.get("/study", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "study.html"));
+  res.sendFile(path.join(__dirname, "dev", "study.html"));
 });
 app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "login.html"));
+  res.sendFile(path.join(__dirname, "dev", "login.html"));
 });
 app.get("/dashboard", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+  res.sendFile(path.join(__dirname, "dev", "dashboard.html"));
 });
 app.get("/panel-kosakata", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-kosakata.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-kosakata.html"));
 });
 app.get("/panel-polakalimat", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-polakalimat.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-polakalimat.html"));
 });
 app.get("/create-quiz", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "create-quiz.html"));
+  res.sendFile(path.join(__dirname, "dev", "create-quiz.html"));
 });
 app.get("/panel-dokkai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-dokkai.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-dokkai.html"));
 });
 app.get("/panel-choukai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-choukai.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-choukai.html"));
 });
 
-// === API Routes ===
-
-// 1. Auth API (Tidak Berubah)
 app.post("/api/login", (req, res) => {
   const { username, password } = req.body;
   if (username === process.env.ADMIN_USERNAME && password === process.env.ADMIN_PASSWORD) {
@@ -230,7 +207,6 @@ app.get("/api/logout", (req, res) => {
   res.redirect("/login");
 });
 
-// 2. Chapters API (Tidak Berubah)
 app.get("/api/chapters", async (req, res) => {
   try {
     const { rows } = await pool.query("SELECT * FROM chapters ORDER BY id ASC");
@@ -268,7 +244,6 @@ app.delete("/api/chapters/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
-// 3. Vocabularies API (Tidak Berubah)
 app.get("/api/vocabulary/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
@@ -323,9 +298,6 @@ app.delete("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
-// 4. Grammar Patterns API [MODIFIKASI URUTAN]
-
-// [MODIFIKASI URUTAN] POST /api/grammar (Menambah sort_order saat insert)
 app.post("/api/grammar", authApiMiddleware, async (req, res) => {
   const { bab_id, pattern, explanation, example, image_urls } = req.body;
   try {
@@ -345,9 +317,8 @@ app.post("/api/grammar", authApiMiddleware, async (req, res) => {
   }
 });
 
-// [MODIFIKASI URUTAN] Endpoint BARU untuk menyimpan urutan
 app.post("/api/grammar/reorder", authApiMiddleware, async (req, res) => {
-  const { babId, orderedIds } = req.body; // orderedIds adalah array [id1, id2, id3, ...]
+  const { babId, orderedIds } = req.body; 
 
   if (!babId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
     return res.status(400).json({ error: "Data tidak valid" });
@@ -357,7 +328,6 @@ app.post("/api/grammar/reorder", authApiMiddleware, async (req, res) => {
   try {
     await client.query("BEGIN");
     
-    // Loop melalui array ID dan update sort_order berdasarkan indeksnya
     for (let i = 0; i < orderedIds.length; i++) {
       const id = orderedIds[i];
       const sortOrder = i;
@@ -389,8 +359,6 @@ app.get("/api/grammar/entry/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
-// [MODIFIKASI URUTAN] GET /api/grammar/:babId (Menambah ORDER BY)
-// Ini akan otomatis memperbaiki `study.html` juga
 app.get("/api/grammar/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
@@ -404,7 +372,6 @@ app.get("/api/grammar/:babId", async (req, res) => {
   }
 });
 
-// [MODIFIKASI URUTAN] PUT /api/grammar/:id (Tidak perlu mengubah sort_order saat update)
 app.put("/api/grammar/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   const { pattern, explanation, example, image_urls } = req.body;
@@ -428,13 +395,14 @@ app.delete("/api/grammar/:id", authApiMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// [AKHIR MODIFIKASI API GRAMMAR]
 
-// 5. Quizzes API (Tidak Berubah)
 app.get("/api/quizzes/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query("SELECT id, bab_id, question, option_a, option_b, option_c, option_d FROM quizzes WHERE bab_id = $1", [babId]);
+    const { rows } = await pool.query(
+      "SELECT id, bab_id, question, option_a, option_b, option_c, option_d, answer_summary FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", 
+      [babId]
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -451,13 +419,13 @@ app.get("/api/quiz/entry/:id", authApiMiddleware, async (req, res) => {
 });
 app.put("/api/quizzes/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { question, option_a, option_b, option_c, option_d, correct_answer } = req.body;
+  const { question, option_a, option_b, option_c, option_d, correct_answer, answer_summary } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE quizzes SET 
-       question = $1, option_a = $2, option_b = $3, option_c = $4, option_d = $5, correct_answer = $6
-       WHERE id = $7 RETURNING *`,
-      [question, option_a, option_b, option_c, option_d, correct_answer, id]
+       question = $1, option_a = $2, option_b = $3, option_c = $4, option_d = $5, correct_answer = $6, answer_summary = $7
+       WHERE id = $8 RETURNING *`,
+      [question, option_a, option_b, option_c, option_d, correct_answer, answer_summary, id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -476,24 +444,28 @@ app.delete("/api/quizzes/:id", authApiMiddleware, async (req, res) => {
 app.get("/api/admin/quizzes/:babId", authApiMiddleware, async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query("SELECT * FROM quizzes WHERE bab_id = $1", [babId]);
+    const { rows } = await pool.query("SELECT * FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", [babId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 app.post("/api/quizzes", authApiMiddleware, async (req, res) => {
-  const { bab_id, question, option_a, option_b, option_c, option_d, correct_answer } = req.body;
+  const { bab_id, question, option_a, option_b, option_c, option_d, correct_answer, answer_summary } = req.body;
   try {
-    const { rows } = await pool.query("INSERT INTO quizzes (bab_id, question, option_a, option_b, option_c, option_d, correct_answer) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *", [
-      bab_id,
-      question,
-      option_a,
-      option_b,
-      option_c,
-      option_d,
-      correct_answer,
-    ]);
+    const { rows } = await pool.query(
+      "INSERT INTO quizzes (bab_id, question, option_a, option_b, option_c, option_d, correct_answer, answer_summary) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *", 
+      [
+        bab_id,
+        question,
+        option_a,
+        option_b,
+        option_c,
+        option_d,
+        correct_answer,
+        answer_summary
+      ]
+    );
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -531,8 +503,6 @@ app.post("/api/submit-quiz/:babId", async (req, res) => {
   }
 });
 
-// 6. Reading (Dokkai) API (Tidak Berubah)
-// 6. Reading (Dokkai) API (PERBAIKAN)
 app.get("/api/reading/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
@@ -551,7 +521,7 @@ app.get("/api/reading/:babId", async (req, res) => {
       ) as questions 
       FROM reading_passages p
       WHERE p.bab_id = $1 
-      GROUP BY p.id -- [PERBAIKAN] GROUP BY DITAMBAHKAN
+      GROUP BY p.id
       ORDER BY p.id ASC`,
       [babId]
     );
@@ -563,7 +533,6 @@ app.get("/api/reading/:babId", async (req, res) => {
     });
     res.json(filteredRows);
   } catch (err) {
-    // Tambahkan log ini untuk melihat error di konsol server
     console.error(`Error di /api/reading/${babId}:`, err); 
     res.status(500).json({ error: err.message });
   }
@@ -582,14 +551,14 @@ app.get("/api/admin/reading/:babId", authApiMiddleware, async (req, res) => {
           'option_b', q.option_b,
           'option_c', q.option_c,
           'option_d', q.option_d,
-          'correct_answer', q.correct_answer -- [PERBAIKAN] SIMBOL 'S' ANEH DIHAPUS DARI SINI
+          'correct_answer', q.correct_answer
         ) ORDER BY q.id ASC)
         FROM reading_questions q 
         WHERE q.passage_id = p.id
       ) as questions 
       FROM reading_passages p
       WHERE p.bab_id = $1 
-      GROUP BY p.id -- [PERBAIKAN] GROUP BY DITAMBAHKAN
+      GROUP BY p.id
       ORDER BY p.id ASC`,
       [babId]
     );
@@ -731,7 +700,6 @@ app.post("/api/submit-reading/:babId", async (req, res) => {
   }
 });
 
-// 7. Listening (Choukai) API (Tidak Berubah)
 app.post("/api/listening", authApiMiddleware, async (req, res) => {
   const { bab_id, title, description, image_url, audio_urls, script } = req.body;
   try {
@@ -800,7 +768,6 @@ app.delete("/api/listening/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
