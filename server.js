@@ -31,8 +31,10 @@ const pool = new Pool({
         id SERIAL PRIMARY KEY,
         bab_id INTEGER REFERENCES chapters(id) ON DELETE CASCADE,
         kosakata TEXT NOT NULL,
-        arti TEXT NOT NULL,
-        image_url TEXT
+        arti TEXT,
+        image_url TEXT,
+        item_type VARCHAR(20) DEFAULT 'vocab' NOT NULL,
+        sort_order INTEGER
       )
     `);
 
@@ -118,6 +120,8 @@ const pool = new Pool({
     }
     await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS arti TEXT;`);
     await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS image_url TEXT;`);
+    await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS item_type VARCHAR(20) DEFAULT 'vocab' NOT NULL;`);
+    await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS sort_order INTEGER;`);
     console.log("Validasi kolom 'vocabularies' selesai.");
 
     await client.query(`ALTER TABLE grammar_patterns DROP COLUMN IF EXISTS image_url;`); 
@@ -145,7 +149,7 @@ const pool = new Pool({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "dev")));
 
 function authPageMiddleware(req, res, next) {
   if (req.cookies.auth === "true") {
@@ -163,34 +167,34 @@ function authApiMiddleware(req, res, next) {
 }
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(__dirname, "dev", "index.html"));
 });
 app.get("/quiz", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "quiz.html"));
+  res.sendFile(path.join(__dirname, "dev", "quiz.html"));
 });
 app.get("/study", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "study.html"));
+  res.sendFile(path.join(__dirname, "dev", "study.html"));
 });
 app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "login.html"));
+  res.sendFile(path.join(__dirname, "dev", "login.html"));
 });
 app.get("/dashboard", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+  res.sendFile(path.join(__dirname, "dev", "dashboard.html"));
 });
 app.get("/panel-kosakata", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-kosakata.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-kosakata.html"));
 });
 app.get("/panel-polakalimat", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-polakalimat.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-polakalimat.html"));
 });
 app.get("/create-quiz", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "create-quiz.html"));
+  res.sendFile(path.join(__dirname, "dev", "create-quiz.html"));
 });
 app.get("/panel-dokkai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-dokkai.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-dokkai.html"));
 });
 app.get("/panel-choukai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "panel-choukai.html"));
+  res.sendFile(path.join(__dirname, "dev", "panel-choukai.html"));
 });
 
 app.post("/api/login", (req, res) => {
@@ -244,29 +248,50 @@ app.delete("/api/chapters/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
+
 app.get("/api/vocabulary/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
-    const { rows } = await pool.query("SELECT id, kosakata, arti, image_url FROM vocabularies WHERE id = $1", [id]);
+    const { rows } = await pool.query("SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE id = $1", [id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.get("/api/vocabularies/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query("SELECT id, kosakata, arti, image_url FROM vocabularies WHERE bab_id = $1 ORDER BY id ASC", [babId]);
+    const { rows } = await pool.query(
+      "SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", 
+      [babId]
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.get("/api/admin/vocabularies/:babId", authApiMiddleware, async (req, res) => {
+  const { babId } = req.params;
+  try {
+    const { rows } = await pool.query(
+      "SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", 
+      [babId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/vocabularies", authApiMiddleware, async (req, res) => {
   const { bab_id, kosakata, arti, image_url } = req.body;
   try {
     const { rows } = await pool.query(
-      "INSERT INTO vocabularies (bab_id, kosakata, arti, image_url) VALUES ($1, $2, $3, $4) RETURNING *",
+      `INSERT INTO vocabularies (bab_id, kosakata, arti, image_url, item_type, sort_order) 
+       VALUES ($1, $2, $3, $4, 'vocab', (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vocabularies WHERE bab_id = $1)) 
+       RETURNING *`,
       [bab_id, kosakata, arti, image_url || null]
     );
     res.status(201).json(rows[0]);
@@ -274,12 +299,13 @@ app.post("/api/vocabularies", authApiMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.put("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   const { kosakata, arti, image_url } = req.body;
   try {
     const { rows } = await pool.query(
-      "UPDATE vocabularies SET kosakata = $1, arti = $2, image_url = $3 WHERE id = $4 RETURNING *",
+      "UPDATE vocabularies SET kosakata = $1, arti = $2, image_url = $3 WHERE id = $4 AND item_type = 'vocab' RETURNING *",
       [kosakata, arti, image_url || null, id]
     );
     res.json(rows[0]);
@@ -287,11 +313,72 @@ app.put("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post("/api/vocab-divider", authApiMiddleware, async (req, res) => {
+  const { bab_id, kosakata } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO vocabularies (bab_id, kosakata, item_type, sort_order) 
+       VALUES ($1, $2, 'divider', (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM vocabularies WHERE bab_id = $1)) 
+       RETURNING *`,
+      [bab_id, kosakata]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/vocab-divider/:id", authApiMiddleware, async (req, res) => {
+  const { id } = req.params;
+  const { kosakata } = req.body;
+  try {
+    const { rows } = await pool.query(
+      "UPDATE vocabularies SET kosakata = $1 WHERE id = $2 AND item_type = 'divider' RETURNING *",
+      [kosakata, id]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/vocabularies/reorder", authApiMiddleware, async (req, res) => {
+  const { babId, orderedIds } = req.body; 
+
+  if (!babId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
+    return res.status(400).json({ error: "Data tidak valid" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    
+    for (let i = 0; i < orderedIds.length; i++) {
+      const id = orderedIds[i];
+      const sortOrder = i;
+      await client.query(
+        "UPDATE vocabularies SET sort_order = $1 WHERE id = $2 AND bab_id = $3",
+        [sortOrder, id, babId]
+      );
+    }
+    
+    await client.query("COMMIT");
+    res.json({ success: true, message: "Urutan berhasil disimpan" });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error("Error reordering vocabularies:", err);
+    res.status(500).json({ error: "Gagal menyimpan urutan" });
+  } finally {
+    client.release();
+  }
+});
+
 app.delete("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
     await pool.query("DELETE FROM vocabularies WHERE id = $1", [id]);
-    res.json({ success: true, message: "Kosakata berhasil dihapus" });
+    res.json({ success: true, message: "Item berhasil dihapus" });
   } catch (err)
     {
     res.status(500).json({ error: err.message });
