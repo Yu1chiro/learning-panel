@@ -146,10 +146,11 @@ const pool = new Pool({
     }
   }
 })();
+// set update app middleware and routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, "dev")));
+app.use(express.static(path.join(__dirname, "public")));
 
 function authPageMiddleware(req, res, next) {
   if (req.cookies.auth === "true") {
@@ -167,34 +168,34 @@ function authApiMiddleware(req, res, next) {
 }
 
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "index.html"));
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 app.get("/quiz", (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "quiz.html"));
+  res.sendFile(path.join(__dirname, "public", "quiz.html"));
 });
 app.get("/study", (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "study.html"));
+  res.sendFile(path.join(__dirname, "public", "study.html"));
 });
 app.get("/login", (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "login.html"));
+  res.sendFile(path.join(__dirname, "public", "login.html"));
 });
 app.get("/dashboard", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "dashboard.html"));
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"));
 });
 app.get("/panel-kosakata", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "panel-kosakata.html"));
+  res.sendFile(path.join(__dirname, "public", "panel-kosakata.html"));
 });
 app.get("/panel-polakalimat", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "panel-polakalimat.html"));
+  res.sendFile(path.join(__dirname, "public", "panel-polakalimat.html"));
 });
 app.get("/create-quiz", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "create-quiz.html"));
+  res.sendFile(path.join(__dirname, "public", "create-quiz.html"));
 });
 app.get("/panel-dokkai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "panel-dokkai.html"));
+  res.sendFile(path.join(__dirname, "public", "panel-dokkai.html"));
 });
 app.get("/panel-choukai", authPageMiddleware, (req, res) => {
-  res.sendFile(path.join(__dirname, "dev", "panel-choukai.html"));
+  res.sendFile(path.join(__dirname, "public", "panel-choukai.html"));
 });
 
 app.post("/api/login", (req, res) => {
