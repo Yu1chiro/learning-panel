@@ -3,19 +3,26 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const path = require("path");
 const { Pool } = require("pg");
+const cors = require("cors");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
-
+// SETUP & INIT DB
 (async () => {
-  let client; 
+  let client;
   try {
     client = await pool.connect();
-    
+
     await client.query("BEGIN");
 
     await client.query(`
@@ -96,7 +103,7 @@ const pool = new Pool({
         script TEXT 
       )
     `);
-    
+
     await client.query("COMMIT");
     console.log("Semua tabel (CREATE IF NOT EXISTS) berhasil dieksekusi.");
 
@@ -110,12 +117,13 @@ const pool = new Pool({
     await client.query(`ALTER TABLE listening_exercises DROP COLUMN IF EXISTS audio_url_1;`);
     await client.query(`ALTER TABLE listening_exercises DROP COLUMN IF EXISTS audio_url_2;`);
     console.log("Validasi kolom 'listening_exercises' selesai.");
-
+    await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS video_url TEXT;`);
+    console.log("Validasi kolom 'grammar_patterns' (video_url) selesai.");
     try {
       await client.query(`ALTER TABLE vocabularies RENAME COLUMN content TO kosakata;`);
     } catch (renameErr) {
-      if (renameErr.code !== '42701' && renameErr.code !== '42703') { 
-        throw renameErr; 
+      if (renameErr.code !== "42701" && renameErr.code !== "42703") {
+        throw renameErr;
       }
     }
     await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS arti TEXT;`);
@@ -124,8 +132,8 @@ const pool = new Pool({
     await client.query(`ALTER TABLE vocabularies ADD COLUMN IF NOT EXISTS sort_order INTEGER;`);
     console.log("Validasi kolom 'vocabularies' selesai.");
 
-    await client.query(`ALTER TABLE grammar_patterns DROP COLUMN IF EXISTS image_url;`); 
-    await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS image_urls TEXT[] DEFAULT ARRAY[]::TEXT[];`); 
+    await client.query(`ALTER TABLE grammar_patterns DROP COLUMN IF EXISTS image_url;`);
+    await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS image_urls TEXT[] DEFAULT ARRAY[]::TEXT[];`);
     await client.query(`ALTER TABLE grammar_patterns ADD COLUMN IF NOT EXISTS sort_order INTEGER;`);
     console.log("Validasi kolom 'grammar_patterns' selesai.");
 
@@ -133,11 +141,14 @@ const pool = new Pool({
     console.log("Validasi kolom 'quizzes' (answer_summary) selesai.");
 
     console.log("Semua validasi kolom (ALTER) berhasil.");
-    
   } catch (err) {
-    console.error("Error saat inisialisasi tabel:", err); 
+    console.error("Error saat inisialisasi tabel:", err);
     if (client) {
-        try { await client.query("ROLLBACK"); } catch (rbErr) { console.error("Error saat rollback:", rbErr); }
+      try {
+        await client.query("ROLLBACK");
+      } catch (rbErr) {
+        console.error("Error saat rollback:", rbErr);
+      }
     }
   } finally {
     if (client) {
@@ -249,7 +260,6 @@ app.delete("/api/chapters/:id", authApiMiddleware, async (req, res) => {
   }
 });
 
-
 app.get("/api/vocabulary/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
@@ -263,10 +273,7 @@ app.get("/api/vocabulary/:id", authApiMiddleware, async (req, res) => {
 app.get("/api/vocabularies/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query(
-      "SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", 
-      [babId]
-    );
+    const { rows } = await pool.query("SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", [babId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -276,10 +283,7 @@ app.get("/api/vocabularies/:babId", async (req, res) => {
 app.get("/api/admin/vocabularies/:babId", authApiMiddleware, async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query(
-      "SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", 
-      [babId]
-    );
+    const { rows } = await pool.query("SELECT id, kosakata, arti, image_url, item_type FROM vocabularies WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", [babId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -305,10 +309,7 @@ app.put("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   const { kosakata, arti, image_url } = req.body;
   try {
-    const { rows } = await pool.query(
-      "UPDATE vocabularies SET kosakata = $1, arti = $2, image_url = $3 WHERE id = $4 AND item_type = 'vocab' RETURNING *",
-      [kosakata, arti, image_url || null, id]
-    );
+    const { rows } = await pool.query("UPDATE vocabularies SET kosakata = $1, arti = $2, image_url = $3 WHERE id = $4 AND item_type = 'vocab' RETURNING *", [kosakata, arti, image_url || null, id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -334,10 +335,7 @@ app.put("/api/vocab-divider/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   const { kosakata } = req.body;
   try {
-    const { rows } = await pool.query(
-      "UPDATE vocabularies SET kosakata = $1 WHERE id = $2 AND item_type = 'divider' RETURNING *",
-      [kosakata, id]
-    );
+    const { rows } = await pool.query("UPDATE vocabularies SET kosakata = $1 WHERE id = $2 AND item_type = 'divider' RETURNING *", [kosakata, id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -345,7 +343,7 @@ app.put("/api/vocab-divider/:id", authApiMiddleware, async (req, res) => {
 });
 
 app.post("/api/vocabularies/reorder", authApiMiddleware, async (req, res) => {
-  const { babId, orderedIds } = req.body; 
+  const { babId, orderedIds } = req.body;
 
   if (!babId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
     return res.status(400).json({ error: "Data tidak valid" });
@@ -354,16 +352,13 @@ app.post("/api/vocabularies/reorder", authApiMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    
+
     for (let i = 0; i < orderedIds.length; i++) {
       const id = orderedIds[i];
       const sortOrder = i;
-      await client.query(
-        "UPDATE vocabularies SET sort_order = $1 WHERE id = $2 AND bab_id = $3",
-        [sortOrder, id, babId]
-      );
+      await client.query("UPDATE vocabularies SET sort_order = $1 WHERE id = $2 AND bab_id = $3", [sortOrder, id, babId]);
     }
-    
+
     await client.query("COMMIT");
     res.json({ success: true, message: "Urutan berhasil disimpan" });
   } catch (err) {
@@ -380,33 +375,13 @@ app.delete("/api/vocabularies/:id", authApiMiddleware, async (req, res) => {
   try {
     await pool.query("DELETE FROM vocabularies WHERE id = $1", [id]);
     res.json({ success: true, message: "Item berhasil dihapus" });
-  } catch (err)
-    {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/grammar", authApiMiddleware, async (req, res) => {
-  const { bab_id, pattern, explanation, example, image_urls } = req.body;
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO grammar_patterns (
-        bab_id, pattern, explanation, example, image_urls, sort_order
-      ) VALUES (
-        $1, $2, $3, $4, $5, 
-        (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM grammar_patterns WHERE bab_id = $1)
-      ) RETURNING *`,
-      [bab_id, pattern, explanation, example, image_urls || []]
-    );
-    res.status(201).json(rows[0]);
   } catch (err) {
-    console.error("Error di POST /api/grammar:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
 app.post("/api/grammar/reorder", authApiMiddleware, async (req, res) => {
-  const { babId, orderedIds } = req.body; 
+  const { babId, orderedIds } = req.body;
 
   if (!babId || !Array.isArray(orderedIds) || orderedIds.length === 0) {
     return res.status(400).json({ error: "Data tidak valid" });
@@ -415,16 +390,13 @@ app.post("/api/grammar/reorder", authApiMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    
+
     for (let i = 0; i < orderedIds.length; i++) {
       const id = orderedIds[i];
       const sortOrder = i;
-      await client.query(
-        "UPDATE grammar_patterns SET sort_order = $1 WHERE id = $2 AND bab_id = $3",
-        [sortOrder, id, babId]
-      );
+      await client.query("UPDATE grammar_patterns SET sort_order = $1 WHERE id = $2 AND bab_id = $3", [sortOrder, id, babId]);
     }
-    
+
     await client.query("COMMIT");
     res.json({ success: true, message: "Urutan berhasil disimpan" });
   } catch (err) {
@@ -436,38 +408,61 @@ app.post("/api/grammar/reorder", authApiMiddleware, async (req, res) => {
   }
 });
 
+// POST /api/grammar
+app.post("/api/grammar", authApiMiddleware, async (req, res) => {
+  const { bab_id, pattern, explanation, example, image_urls, video_url } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO grammar_patterns (
+        bab_id, pattern, explanation, example, image_urls, video_url, sort_order
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6,
+        (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM grammar_patterns WHERE bab_id = $1)
+      ) RETURNING *`,
+      [bab_id, pattern, explanation, example, image_urls || [], video_url || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error("Error di POST /api/grammar:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
+// GET /api/grammar/entry/:id (untuk admin edit)
 app.get("/api/grammar/entry/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
   try {
     const { rows } = await pool.query("SELECT * FROM grammar_patterns WHERE id = $1", [id]);
-    res.json(rows[0]); 
+    res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// GET /api/grammar/:babId (untuk study.html)
 app.get("/api/grammar/:babId", async (req, res) => {
   const { babId } = req.params;
   try {
-    const { rows } = await pool.query(
-      "SELECT * FROM grammar_patterns WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", 
-      [babId]
-    );
-    res.json(rows); 
+    const { rows } = await pool.query("SELECT id, bab_id, pattern, explanation, example, image_urls, video_url FROM grammar_patterns WHERE bab_id = $1 ORDER BY sort_order ASC, id ASC", [babId]);
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// PUT /api/grammar/:id
 app.put("/api/grammar/:id", authApiMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { pattern, explanation, example, image_urls } = req.body;
+  const { pattern, explanation, example, image_urls, video_url } = req.body;
   try {
-    const { rows } = await pool.query(
-      "UPDATE grammar_patterns SET pattern = $1, explanation = $2, example = $3, image_urls = $4 WHERE id = $5 RETURNING *",
-      [pattern, explanation, example, image_urls || [], id]
-    );
+    const { rows } = await pool.query("UPDATE grammar_patterns SET pattern = $1, explanation = $2, example = $3, image_urls = $4, video_url = $5 WHERE id = $6 RETURNING *", [
+      pattern,
+      explanation,
+      example,
+      image_urls || [],
+      video_url || null,
+      id,
+    ]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -483,37 +478,107 @@ app.delete("/api/grammar/:id", authApiMiddleware, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// POST /api/grammar/check-sentence - Endpoint untuk validasi kalimat
+app.post("/api/grammar/check-sentence", async (req, res) => {
+  const { sentence, pattern, explanation, example } = req.body;
 
-app.get("/api/quizzes/:babId", async (req, res) => {
-  const { babId } = req.params;
+  if (!sentence || !pattern) {
+    return res.status(400).json({ error: "Kalimat dan Pola Kalimat wajib diisi." });
+  }
+
+  // Gemini API Key dari instruksi (disarankan disimpan di process.env)
+  const GEMINI_API_KEY = "AIzaSyDctsFvKvHK5kb1dICZ1cgvfNuJD8w4jrc";
+  const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+
+  const prompt = `
+    Anda adalah seorang **Korektor Bahasa Jepang Tingkat Tinggi** yang sangat ketat dan teliti.
+    Tugas utama Anda adalah **memastikan akurasi tata bahasa dan penggunaan partikel 100% tepat**.
+    
+    PERATURAN KETAT: Jika ada **kesalahan tata bahasa** sekecil apa pun, termasuk **penghilangan atau kesalahan partikel (seperti 'wa', 'ga', 'o', 'ni', dll.)**, kalimat harus dinilai **SALAH** (is_correct: FALSE).
+
+    Berikut adalah materi referensi dan kalimat siswa:
+
+    Pola Kalimat yang Diuji: ${pattern}
+    Penjelasan Pola: ${explanation ? explanation.replace(/<[^>]*>?/gm, "") : "Tidak ada penjelasan tambahan."}
+    Contoh: ${example ? example.replace(/<[^>]*>?/gm, "") : "Tidak ada contoh tambahan."}
+
+    Kalimat Siswa yang Dinilai: "${sentence}"
+
+    Berikan analisis hanya dalam format JSON. JANGAN tambahkan teks, penjelasan, atau Markdown (seperti \`\`\`) di luar objek JSON.
+    Format JSON yang harus Anda hasilkan adalah:
+
+    {
+      "is_correct": [boolean, TRUE jika kalimat 100% benar secara tata bahasa, termasuk partikel, dan menggunakan pola kalimat],
+      "feedback_id": [string, kode: PERFECT, GRAMMAR_ERROR, atau PATTERN_MISUSE],
+      "feedback_message": [string, pesan umpan balik singkat dalam Bahasa Indonesia. Jika ada kesalahan partikel, jelaskan partikel mana yang hilang atau salah.]
+    }
+  `;
   try {
-    const { rows } = await pool.query(
-      "SELECT id, bab_id, question, option_a, option_b, option_c, option_d, answer_summary FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", 
-      [babId]
-    );
+    const apiResponse = await fetch(GEMINI_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-goog-api-key": GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+      }),
+    });
+
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text();
+      throw new Error(`Gemini API error: ${apiResponse.status} - ${errorText}`);
+    }
+
+    const data = await apiResponse.json();
+
+    // Asumsi data.candidates[0].content.parts[0].text adalah STRING JSON murni
+    const responseText = data.candidates[0].content.parts[0].text.trim();
+
+    // Tambahkan penanganan jika output Gemini masih terpotong atau memiliki markdown
+    let geminiResult;
+    try {
+      geminiResult = JSON.parse(responseText.replace(/```json|```/g, "").trim());
+    } catch (parseError) {
+      console.error("Gagal parsing JSON dari respons Gemini:", parseError);
+      console.log("Respons teks mentah:", responseText);
+      throw new Error("Respons Gemini tidak dalam format JSON yang valid.");
+    }
+
+    res.json(geminiResult);
+  } catch (err) {
+    console.error("Error saat validasi Gemini:", err);
+    res.status(500).json({
+      is_correct: false,
+      feedback_id: "API_ERROR",
+      feedback_message: `Gagal memproses permintaan: ${err.message}`,
+    });
+  }
+});
+app.get("/api/quizzes/:babId", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT id, bab_id, question, option_a, option_b, option_c, option_d, answer_summary FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", [req.params.babId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 app.get("/api/quiz/entry/:id", authApiMiddleware, async (req, res) => {
-  const { id } = req.params;
   try {
-    const { rows } = await pool.query("SELECT * FROM quizzes WHERE id = $1", [id]);
+    const { rows } = await pool.query("SELECT * FROM quizzes WHERE id = $1", [req.params.id]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 app.put("/api/quizzes/:id", authApiMiddleware, async (req, res) => {
-  const { id } = req.params;
   const { question, option_a, option_b, option_c, option_d, correct_answer, answer_summary } = req.body;
   try {
     const { rows } = await pool.query(
       `UPDATE quizzes SET 
        question = $1, option_a = $2, option_b = $3, option_c = $4, option_d = $5, correct_answer = $6, answer_summary = $7
        WHERE id = $8 RETURNING *`,
-      [question, option_a, option_b, option_c, option_d, correct_answer, answer_summary, id]
+      [question, option_a, option_b, option_c, option_d, correct_answer, answer_summary, req.params.id]
     );
     res.json(rows[0]);
   } catch (err) {
@@ -521,18 +586,16 @@ app.put("/api/quizzes/:id", authApiMiddleware, async (req, res) => {
   }
 });
 app.delete("/api/quizzes/:id", authApiMiddleware, async (req, res) => {
-  const { id } = req.params;
   try {
-    await pool.query("DELETE FROM quizzes WHERE id = $1", [id]);
+    await pool.query("DELETE FROM quizzes WHERE id = $1", [req.params.id]);
     res.json({ success: true, message: "Soal berhasil dihapus" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 app.get("/api/admin/quizzes/:babId", authApiMiddleware, async (req, res) => {
-  const { babId } = req.params;
   try {
-    const { rows } = await pool.query("SELECT * FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", [babId]);
+    const { rows } = await pool.query("SELECT * FROM quizzes WHERE bab_id = $1 ORDER BY id ASC", [req.params.babId]);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -551,7 +614,7 @@ app.post("/api/quizzes", authApiMiddleware, async (req, res) => {
         option_c,
         option_d,
         correct_answer,
-        answer_summary
+        answer_summary,
       ]
     );
     res.status(201).json(rows[0]);
@@ -621,7 +684,7 @@ app.get("/api/reading/:babId", async (req, res) => {
     });
     res.json(filteredRows);
   } catch (err) {
-    console.error(`Error di /api/reading/${babId}:`, err); 
+    console.error(`Error di /api/reading/${babId}:`, err);
     res.status(500).json({ error: err.message });
   }
 });
